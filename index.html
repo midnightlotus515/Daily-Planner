@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily Planner Maker</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500&family=Dancing+Script:wght@500&family=Cormorant+Garamond:wght@500&display=swap">
+<style>
+:root{--bg:#F6F5EC;--panel:#F3F2EC;--ink:#363636;--mute:#7a6558;--line:#E6DDCC;--acc:#5D4334;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1917;--panel:#26221f;--ink:#f1ebe3;--mute:#a79b8e;--line:#40382f;--acc:#d2b48c}}
+:root[data-theme="dark"]{--bg:#1c1917;--panel:#26221f;--ink:#f1ebe3;--mute:#a79b8e;--line:#40382f;--acc:#d2b48c}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 Jost,system-ui,sans-serif}
+.wrap{display:flex;flex-wrap:wrap;gap:24px;padding:20px;max-width:1200px;margin:0 auto}
+.form{flex:1 1 380px;min-width:0}
+.prev{flex:1 1 380px;min-width:0;position:sticky;top:12px;align-self:flex-start}
+h1{font:500 28px 'Cormorant Garamond',serif;margin:0 0 12px}
+h2{font-size:12px;letter-spacing:.15em;text-transform:uppercase;color:var(--mute);margin:20px 0 8px}
+input,textarea{width:100%;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+textarea{resize:vertical;min-height:60px}
+.row{display:grid;grid-template-columns:58px 1fr 1fr 28px;gap:6px;margin-bottom:6px;align-items:center}
+.row input[type=checkbox]{width:18px;height:18px;accent-color:var(--acc)}
+.hint{font-size:12px;color:var(--mute);margin:2px 0 6px}
+canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;display:block}
+.btns{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+button{font:500 15px Jost,sans-serif;padding:10px 18px;border-radius:8px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer}
+button.alt{background:transparent;color:var(--acc)}
+#msg{font-size:13px;color:var(--mute);margin-top:8px;min-height:18px}
+.tabs{flex:1 1 100%;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tab{padding:7px 14px;border-radius:999px;background:transparent;color:var(--ink);border:1px solid var(--line);font-size:14px}
+.tab.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.tools{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.tools button{padding:7px 12px;font-size:13px}
+@media(max-width:800px){.prev{position:static;order:-1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="tabs"><div id="tabs" class="tabs" style="flex:0 1 auto"></div><div class="tools"><button class="alt" id="addb">+ Blank day</button><button class="alt" id="dupb">Duplicate day</button><button class="alt" id="delb">Delete day</button></div></div>
+<div class="form">
+<h1>Daily Planner Maker</h1>
+<h2>Header</h2>
+<input id="date" type="date">
+<div style="height:6px"></div>
+<input id="quote" placeholder="Tagline (optional, top right)">
+<h2>Schedule</h2>
+<div class="hint">Time · Activity · Small note · Highlight</div>
+<div id="rows"></div>
+<h2>Top 3 priorities</h2>
+<input id="p0"><div style="height:6px"></div><input id="p1"><div style="height:6px"></div><input id="p2">
+<h2>Reminder</h2><textarea id="reminder"></textarea>
+<h2>For tomorrow</h2><textarea id="tomorrow"></textarea>
+<h2>Notes</h2><textarea id="notes"></textarea>
+</div>
+<div class="prev">
+<canvas id="cv" width="2480" height="3508"></canvas>
+<div class="btns">
+<button id="bjpg">JPG (this day)</button>
+<button id="bpdf1">PDF (this day)</button>
+<button id="bpdf" class="alt">PDF (all days)</button>
+<button id="bzip" class="alt">JPGs of all days (ZIP)</button>
+</div>
+<div class="btns">
+<button id="bsave" class="alt">Save data</button>
+<button id="bload" class="alt">Load data</button>
+<input id="file" type="file" accept=".json,application/json" multiple hidden>
+</div>
+<div class="hint">Data files (.json) keep every day editable. You can pick several files at once. Days are added in file name order; when a date repeats, the version you already have (or the earlier file) is kept.</div>
+<div id="msg"></div>
+</div>
+</div>
+<script>
+const W=1240,H=1754,cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id);
+const defaults=[
+['6:00','SLEEP','',0],['7:00','SLEEP','',0],['8:00','BREAKFAST/WASHUP','',0],
+['9:00','ROOM CLEANING:BED ZONE','',0],['10:00','ROOM CLEANING:FLOOR ZONE','',0],['11:00','ROOM CLEANING:DESK ZONE','',0],
+['12:00','LUNCH/TAKE OUT THE TRASH','',0],['13:00','WEAR MAKEUP','',0],['14:00','ESLITE BOOKSTORE','',1],
+['15:00','PORTFOLIO','不只是圖書館',1],['16:00','PORTFOLIO','不只是圖書館',1],['17:00','DINNER','',0],
+['18:00','WANDER/DAYDREAMING','',0],['19:00','READING:克里姆林宮的餐桌','',1],['20:00','READING:克里姆林宮的餐桌','',1],
+['21:00','WASH UP','',0],['22:00','MOVIE','',0],['23:00','SLEEP','',0]];
+const rows=$('rows');
+defaults.forEach((r,i)=>{
+  const d=document.createElement('div');d.className='row';
+  d.innerHTML='<input value="'+r[0]+'"><input value=""><input value="" placeholder="note"><input type="checkbox">';
+  rows.appendChild(d);
+});
+const pad=n=>String(n).padStart(2,'0');
+const t=new Date();
+$('date').value=t.getFullYear()+'-'+pad(t.getMonth()+1)+'-'+pad(t.getDate());
+
+function wrap(text,maxW){
+  const out=[];ctx.letterSpacing='0px';
+  text.split('\n').forEach(p=>{
+    let line='';const L=/[A-Za-z]/;
+    for(const ch of p){
+      if(ctx.measureText(line+ch).width>maxW&&line){
+        let carry='';
+        if(L.test(ch)&&L.test(line.slice(-1))){
+          while(line.length>1&&ctx.measureText(line+'-').width>maxW){carry=line.slice(-1)+carry;line=line.slice(0,-1)}
+          out.push(line+'-');
+        }else out.push(line.trimEnd());
+        line=(carry+ch).trimStart();
+      }else line+=ch;
+    }
+    out.push(line);
+  });
+  return out;
+}
+function T(s,x,y,font,color,align,ls){
+  ctx.font=font;ctx.fillStyle=color;ctx.textAlign=align||'left';ctx.textBaseline='middle';
+  ctx.letterSpacing=ls||'0px';ctx.fillText(s,x,y);
+}
+function line(x1,x2,y,color,w,dash){
+  ctx.strokeStyle=color;ctx.lineWidth=w||2;ctx.lineCap=dash?'round':'butt';
+  ctx.setLineDash(dash||[]);ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();ctx.setLineDash([]);
+}
+function draw(S){S=S||getState();ctx.setTransform(2,0,0,2,0,0);
+  const ink='#363636',beige='#E6DDCC',sand='#C9BDAD',leather='#5D4334',tan='#9F7D58';
+  ctx.fillStyle='#F6F5EC';ctx.fillRect(0,0,W,H);
+  const [y,m,d]=S.date.split('-').map(Number);
+  const dt=new Date(y,(m||1)-1,d||1);
+  T('Daily Planner',60,78,'500 84px "Cormorant Garamond",Georgia,serif',leather,'left','2px');
+  if(S.quote)T(S.quote,1180,70,'500 44px "Dancing Script",cursive',leather,'right');
+  T('DATE '+(y?y+'/'+pad(m)+'/'+pad(d):''),60,142,'500 19px Jost,sans-serif',ink,'left','3px');
+  const wd='SMTWTFS';
+  for(let i=0;i<7;i++){
+    const x=782+i*62;
+    if(i===dt.getDay()){ctx.fillStyle=beige;ctx.fillRect(x-24,118,48,46)}
+    T(wd[i],x,141,'500 19px Jost,sans-serif',ink,'center','1px');
+  }
+  line(60,1180,168,ink,2);
+  // schedule
+  const top=192,rh=84;
+  S.rows.forEach((v,i)=>{
+    const y0=top+i*rh,mid=y0+rh/2;
+    ctx.fillStyle=v[3]?sand:beige;ctx.fillRect(60,y0,140,rh);
+    T(v[0],130,mid,'500 22px Jost,sans-serif',ink,'center','1px');
+    const sub=v[2].trim();
+    T(v[1].toUpperCase(),222,sub?mid-14:mid,'500 24px Jost,"Noto Sans TC",sans-serif',ink,'left','1px');
+    if(sub)T(sub.toUpperCase(),222,mid+18,'400 17px Jost,"Noto Sans TC",sans-serif',ink,'left','0px');
+  });
+  S.rows.forEach((v,i)=>line(60,600,top+(i+1)*rh,ink,2));
+  // priorities
+  ctx.fillStyle=beige;ctx.fillRect(690,192,490,64);
+  T('TOP 3 PRIORITIES',935,224,'500 17px Jost,sans-serif',leather,'center','5px');
+  for(let i=0;i<3;i++){
+    const yy=312+i*66;
+    ctx.strokeStyle=ink;ctx.lineWidth=2;ctx.beginPath();ctx.arc(708,yy,10,0,7);ctx.stroke();
+    T(S.p[i].toUpperCase(),740,yy,'500 23px Jost,"Noto Sans TC",sans-serif',ink,'left','1px');
+    line(700,1180,yy+28,tan,3,[2,20]);
+  }
+  // reminder
+  T('REMINDER',935,525,'500 17px Jost,sans-serif',leather,'center','5px');
+  line(690,1180,556,ink,2);
+  ctx.fillStyle=beige;ctx.fillRect(690,558,490,322);
+  ctx.font='400 22px Jost,"Noto Sans TC",sans-serif';ctx.letterSpacing='0px';
+  wrap(S.reminder,450).slice(0,7).forEach((l,i)=>T(l,710,590+i*40,'400 22px Jost,"Noto Sans TC",sans-serif',ink,'left'));
+  // tomorrow
+  ctx.strokeStyle=sand;ctx.lineWidth=5;ctx.strokeRect(692,925,486,275);
+  T('FOR TOMORROW',935,955,'500 15px Jost,sans-serif',leather,'center','5px');
+  ctx.font='400 22px Jost,"Noto Sans TC",sans-serif';
+  wrap(S.tomorrow,438).slice(0,6).forEach((l,i)=>T(l,717,1000+i*36,'400 22px Jost,"Noto Sans TC",sans-serif',ink,'left'));
+  // notes
+  T('NOTES',935,1262,'500 17px Jost,sans-serif',leather,'center','5px');
+  line(690,1180,1296,ink,2);
+  ctx.font='400 22px Jost,"Noto Sans TC",sans-serif';
+  const nl=wrap(S.notes,480);
+  for(let i=0;i<7;i++){
+    const yy=1368+i*68;
+    if(nl[i])T(nl[i],700,yy-24,'400 22px Jost,"Noto Sans TC",sans-serif',ink,'left');
+    line(700,1180,yy,tan,3,[2,20]);
+  }
+}
+function getState(){
+  return{date:$('date').value,quote:$('quote').value,
+    rows:[...document.querySelectorAll('#rows .row')].map(r=>{const v=r.querySelectorAll('input');return[v[0].value,v[1].value,v[2].value,v[3].checked?1:0]}),
+    p:[0,1,2].map(i=>$('p'+i).value),reminder:$('reminder').value,
+    tomorrow:$('tomorrow').value,notes:$('notes').value};
+}
+function setState(S){
+  $('date').value=S.date;$('quote').value=S.quote;
+  document.querySelectorAll('#rows .row').forEach((r,i)=>{const v=r.querySelectorAll('input'),x=S.rows[i]||['','','',0];v[0].value=x[0];v[1].value=x[1];v[2].value=x[2];v[3].checked=!!x[3]});
+  S.p.forEach((v,i)=>$('p'+i).value=v);
+  $('reminder').value=S.reminder;$('tomorrow').value=S.tomorrow;$('notes').value=S.notes;
+}
+const addDays=(str,n)=>{const [y,m,d]=str.split('-').map(Number),x=new Date(y,m-1,d+n);return x.getFullYear()+'-'+pad(x.getMonth()+1)+'-'+pad(x.getDate())};
+const blankFrom=S=>({date:addDays(S.date,1),quote:S.quote,rows:S.rows.map(r=>[r[0],'','',0]),p:['','',''],reminder:'',tomorrow:'',notes:''});
+const first=getState();
+let days=[first],cur=0;
+try{const sv=JSON.parse(localStorage.getItem('planner-days-v1')||'null');if(sv&&sv.days&&sv.days.length){days=sv.days;cur=Math.min(sv.cur||0,days.length-1);setState(days[cur])}}catch(e){}
+{const ix=days.findIndex(x=>x.date===first.date);
+ if(ix>=0){cur=ix}else{const nb=JSON.parse(JSON.stringify(first));days.push(nb);days.sort((a,b)=>a.date<b.date?-1:1);cur=days.indexOf(nb)}
+ setState(days[cur]);}
+const persist=()=>{try{localStorage.setItem('planner-days-v1',JSON.stringify({days,cur}))}catch(e){}};
+const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function tabs(){
+  const box=$('tabs');box.innerHTML='';
+  days.forEach((S,i)=>{
+    const [y,m,d]=S.date.split('-').map(Number);
+    const b=document.createElement('button');b.className='tab'+(i===cur?' on':'');
+    b.textContent=y?pad(m)+'/'+pad(d)+' '+WD[new Date(y,m-1,d).getDay()]:'Day '+(i+1);
+    b.onclick=()=>{days[cur]=getState();cur=i;setState(days[i]);tabs();draw();persist()};
+    box.appendChild(b);
+  });
+  $('delb').disabled=days.length<2;
+}
+function addDay(S){days[cur]=getState();days.splice(cur+1,0,S);cur++;setState(S);tabs();draw();persist()}
+$('addb').onclick=()=>addDay(blankFrom(getState()));
+$('dupb').onclick=()=>{const S=getState();addDay(Object.assign(JSON.parse(JSON.stringify(S)),{date:addDays(S.date,1)}))};
+$('delb').onclick=()=>{if(days.length<2)return;days.splice(cur,1);cur=Math.max(0,cur-1);setState(days[cur]);tabs();draw();persist()};
+document.querySelector('.form').addEventListener('input',()=>{days[cur]=getState();tabs();draw();persist()});
+tabs();draw();
+if(document.fonts){Promise.all(['500 20px Jost','500 20px "Dancing Script"','500 20px "Cormorant Garamond"'].map(f=>document.fonts.load(f))).then(()=>draw()).catch(()=>{})}
+
+const msg=t=>$('msg').textContent=t;
+let dl=null;
+(async()=>{
+  try{dl=await claude.use('downloads')}catch(e){dl=null}
+})();
+const toJpg=()=>new Promise(r=>cv.toBlob(r,'image/jpeg',0.98));
+async function allJpgs(){
+  days[cur]=getState();const out=[];
+  for(const S of days){draw(S);out.push(new Uint8Array(await (await toJpg()).arrayBuffer()))}
+  draw();return out;
+}
+const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+async function save(file,data){
+  if(dl){
+    try{await dl.save({filename:file,data});msg('Saved ✓');return}
+    catch(e){if(e&&e.code==='declined'){msg('Save cancelled.');return}}
+  }
+  const blob=data instanceof Blob?data:new Blob([data]);
+  try{
+    const f=new File([blob],file,{type:blob.type});
+    if(isIOS&&navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});msg('Done ✓ (use Save to Files / Save Image in the share sheet)');return}
+  }catch(e){if(e&&e.name==='AbortError'){msg('Save cancelled.');return}}
+  try{
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=file;
+    document.body.appendChild(a);a.click();a.remove();
+    msg('Download started. If nothing happens, long-press the preview image to save it.');
+  }catch(e){msg('Could not download in this view. Long-press the preview image to save it.')}
+}
+$('bjpg').onclick=async()=>save('daily-planner-'+$('date').value+'.jpg',await toJpg());
+const PK=595.28/1240,PH=841.89,PW=595.28;
+const WINMAP={'\u2019':0x92,'\u2018':0x91,'\u201C':0x93,'\u201D':0x94,'\u2013':0x96,'\u2014':0x97,'\u2026':0x85,'\u2022':0x95};
+function pdfRuns(s){
+  const r=[];
+  for(const ch of s){
+    const cp=ch.codePointAt(0);let t,code,txt=ch;
+    if(cp<32)continue;
+    if(cp<127||(cp>=160&&cp<256)){t='L';code=cp}
+    else if(WINMAP[ch]){t='L';code=WINMAP[ch]}
+    else if(cp>=256&&cp<0x10000){t='C';code=cp}
+    else{t='L';code=63;txt='?'}
+    const last=r[r.length-1];
+    if(last&&last.t===t){last.s+=txt;last.codes.push(code)}else r.push({t,s:txt,codes:[code]});
+  }
+  return r;
+}
+const PFAM={sans:'/F1',serif:'/F2',script:'/F3'};
+function pdfPageStream(S,mL){
+  const o=[],f=n=>(+n).toFixed(2),X=x=>f(x*PK),Y=y=>f(PH-y*PK);
+  const C=h=>{const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255].map(v=>(v/255).toFixed(3)).join(' ')};
+  const rect=(x,y,w,h,c)=>o.push(C(c)+' rg '+X(x)+' '+Y(y+h)+' '+f(w*PK)+' '+f(h*PK)+' re f');
+  const srect=(x,y,w,h,c,lw)=>o.push(C(c)+' RG '+f(lw*PK)+' w '+X(x)+' '+Y(y+h)+' '+f(w*PK)+' '+f(h*PK)+' re S');
+  const ln=(x1,x2,y,c,w,dash)=>o.push(C(c)+' RG '+f(w*PK)+' w '+(dash?'1 J ['+f(dash[0]*PK)+' '+f(dash[1]*PK)+'] 0 d ':'0 J [] 0 d ')+X(x1)+' '+Y(y)+' m '+X(x2)+' '+Y(y)+' l S');
+  const circ=(cx,cy,r,c,lw)=>{const k=.5523*r,p=(x,y)=>X(x)+' '+Y(y)+' ';
+    o.push(C(c)+' RG '+f(lw*PK)+' w 0 J [] 0 d '+p(cx+r,cy)+'m '+p(cx+r,cy+k)+p(cx+k,cy+r)+p(cx,cy+r)+'c '+p(cx-k,cy+r)+p(cx-r,cy+k)+p(cx-r,cy)+'c '+p(cx-r,cy-k)+p(cx-k,cy-r)+p(cx,cy-r)+'c '+p(cx+k,cy-r)+p(cx+r,cy-k)+p(cx+r,cy)+'c S')};
+  const rw=(r,size,fam)=>r.t==='L'?mL(r.s,size,fam):size*r.codes.length;
+  const wid=(s,size,fam,ls)=>{let w=0,n=0;for(const r of pdfRuns(s)){w+=rw(r,size,fam);n+=r.codes.length}return w+n*ls};
+  const hex=r=>r.codes.map(c=>r.t==='L'?c.toString(16).padStart(2,'0'):c.toString(16).padStart(4,'0')).join('');
+  const T=(s,x,y,size,fam,col,al,ls)=>{
+    ls=ls||0;if(!s)return;
+    const w=wid(s,size,fam,ls);let x0=al==='center'?x-w/2:al==='right'?x-w:x;
+    const yb=Y(y+size*.34);
+    o.push(C(col)+' rg BT '+f(ls*PK)+' Tc');
+    for(const r of pdfRuns(s)){
+      o.push((r.t==='L'?PFAM[fam]:'/F4')+' '+f(size*PK)+' Tf 1 0 0 1 '+X(x0)+' '+yb+' Tm <'+hex(r)+'> Tj');
+      x0+=rw(r,size,fam)+ls*r.codes.length;
+    }
+    o.push('ET');
+  };
+  const wrapW=(text,maxW,size)=>{
+    const out=[],m=s=>wid(s,size,'sans',0),L=/[A-Za-z]/;
+    text.split('\n').forEach(p=>{
+      let line='';
+      for(const ch of p){
+        if(m(line+ch)>maxW&&line){
+          let carry='';
+          if(L.test(ch)&&L.test(line.slice(-1))){
+            while(line.length>1&&m(line+'-')>maxW){carry=line.slice(-1)+carry;line=line.slice(0,-1)}
+            out.push(line+'-');
+          }else out.push(line.trimEnd());
+          line=(carry+ch).trimStart();
+        }else line+=ch;
+      }
+      out.push(line);
+    });
+    return out;
+  };
+  const ink='#363636',beige='#E6DDCC',sand='#C9BDAD',leather='#5D4334',tan='#9F7D58';
+  rect(0,0,1240,1754,'#F6F5EC');
+  const [y,m,d]=S.date.split('-').map(Number),dt=new Date(y,(m||1)-1,d||1),p2=n=>String(n).padStart(2,'0');
+  T('Daily Planner',60,78,80,'serif',leather,'left',2);
+  if(S.quote)T(S.quote,1180,70,42,'script',leather,'right');
+  T('DATE '+(y?y+'/'+p2(m)+'/'+p2(d):''),60,142,19,'sans',ink,'left',3);
+  const wd='SMTWTFS';
+  for(let i=0;i<7;i++){const x=782+i*62;if(i===dt.getDay())rect(x-24,118,48,46,beige);T(wd[i],x,141,19,'sans',ink,'center',1)}
+  ln(60,1180,168,ink,2);
+  const top=192,rh=84;
+  S.rows.forEach((v,i)=>{
+    const y0=top+i*rh,mid=y0+rh/2,sub=v[2].trim();
+    rect(60,y0,140,rh,v[3]?sand:beige);
+    T(v[0],130,mid,22,'sans',ink,'center',1);
+    T(v[1].toUpperCase(),222,sub?mid-14:mid,22,'sans',ink,'left',1);
+    if(sub)T(sub.toUpperCase(),222,mid+18,17,'sans',ink,'left',0);
+  });
+  S.rows.forEach((v,i)=>ln(60,600,top+(i+1)*rh,ink,2));
+  rect(690,192,490,64,beige);
+  T('TOP 3 PRIORITIES',935,224,17,'sans',leather,'center',5);
+  for(let i=0;i<3;i++){const yy=312+i*66;circ(708,yy,10,ink,2);T(S.p[i].toUpperCase(),740,yy,22,'sans',ink,'left',1);ln(700,1180,yy+28,tan,3,[2,20])}
+  T('REMINDER',935,525,17,'sans',leather,'center',5);
+  ln(690,1180,556,ink,2);rect(690,558,490,322,beige);
+  wrapW(S.reminder,450,22).slice(0,7).forEach((l,i)=>T(l,710,590+i*40,22,'sans',ink,'left'));
+  srect(692,925,486,275,sand,5);
+  T('FOR TOMORROW',935,955,15,'sans',leather,'center',5);
+  wrapW(S.tomorrow,438,22).slice(0,6).forEach((l,i)=>T(l,717,1000+i*36,22,'sans',ink,'left'));
+  T('NOTES',935,1262,17,'sans',leather,'center',5);
+  ln(690,1180,1296,ink,2);
+  const nl=wrapW(S.notes,480,22);
+  for(let i=0;i<7;i++){const yy=1368+i*68;if(nl[i])T(nl[i],700,yy-24,22,'sans',ink,'left');ln(700,1180,yy,tan,3,[2,20])}
+  return o.join('\n');
+}
+function buildPdf(list,mL){
+  const enc=new TextEncoder(),parts=[],offs=[];let len=0;
+  const push=d=>{const b=typeof d==='string'?enc.encode(d):d;parts.push(b);len+=b.length};
+  const obj=(k,body)=>{offs[k]=len;push(k+' 0 obj\n'+body+'\nendobj\n')};
+  const n=list.length;
+  push('%PDF-1.4\n');
+  obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2,'<< /Type /Pages /Kids ['+list.map((_,i)=>(9+2*i)+' 0 R').join(' ')+'] /Count '+n+' >>');
+  obj(3,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  obj(4,'<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman /Encoding /WinAnsiEncoding >>');
+  obj(5,'<< /Type /Font /Subtype /Type1 /BaseFont /Times-Italic /Encoding /WinAnsiEncoding >>');
+  obj(6,'<< /Type /Font /Subtype /Type0 /BaseFont /MHei-Medium-UniCNS-UCS2-H /Encoding /UniCNS-UCS2-H /DescendantFonts [7 0 R] >>');
+  obj(7,'<< /Type /Font /Subtype /CIDFontType0 /BaseFont /MHei-Medium /CIDSystemInfo << /Registry (Adobe) /Ordering (CNS1) /Supplement 0 >> /FontDescriptor 8 0 R /DW 1000 >>');
+  obj(8,'<< /Type /FontDescriptor /FontName /MHei-Medium /Flags 4 /FontBBox [-45 -250 1015 887] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 880 /StemV 80 >>');
+  list.forEach((S,i)=>{
+    const st=enc.encode(pdfPageStream(S,mL)),p=9+2*i;
+    obj(p,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+PW+' '+PH+'] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 6 0 R >> >> /Contents '+(p+1)+' 0 R >>');
+    offs[p+1]=len;push((p+1)+' 0 obj\n<< /Length '+st.length+' >>\nstream\n');push(st);push('\nendstream\nendobj\n');
+  });
+  const x=len,cnt=9+2*n;push('xref\n0 '+cnt+'\n0000000000 65535 f \n');
+  for(let k=1;k<cnt;k++)push(String(offs[k]).padStart(10,'0')+' 00000 n \n');
+  push('trailer\n<< /Size '+cnt+' /Root 1 0 R >>\nstartxref\n'+x+'\n%%EOF');
+  return new Blob(parts,{type:'application/pdf'});
+}
+
+const mctx=document.createElement('canvas').getContext('2d');
+const MFONT={sans:'Arial, Helvetica, sans-serif',serif:'"Times New Roman", Times, serif',script:'"Times New Roman", Times, serif'};
+const mLatin=(str,size,fam)=>{mctx.font=(fam==='script'?'italic ':'')+size+'px '+MFONT[fam];return mctx.measureText(str).width};
+async function pdfSave(list,fname){save(fname,buildPdf(list,mLatin))}
+$('bpdf').onclick=()=>{days[cur]=getState();pdfSave(days.map(x=>x),'daily-planner-'+days[0].date+(days.length>1?'_to_'+days[days.length-1].date:'')+'.pdf')};
+$('bpdf1').onclick=()=>{const S=getState();pdfSave([S],'daily-planner-'+S.date+'.pdf')};
+const crcT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=u=>{let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=crcT[(c^u[i])&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0};
+$('bzip').onclick=async()=>{
+  const jpgs=await allJpgs(),enc=new TextEncoder(),parts=[],cd=[];let off=0;
+  jpgs.forEach((j,i)=>{
+    const name=enc.encode(pad(i+1)+'-daily-planner-'+days[i].date+'.jpg'),crc=crc32(j);
+    const h=new DataView(new ArrayBuffer(30));
+    [[0,0x04034b50,4],[4,20,2],[6,0x0800,2],[8,0,2],[10,0,2],[12,0x21,2],[14,crc,4],[18,j.length,4],[22,j.length,4],[26,name.length,2],[28,0,2]].forEach(([o,v,n])=>n===4?h.setUint32(o,v,true):h.setUint16(o,v,true));
+    parts.push(new Uint8Array(h.buffer),name,j);
+    const c=new DataView(new ArrayBuffer(46));
+    [[0,0x02014b50,4],[4,20,2],[6,20,2],[8,0x0800,2],[10,0,2],[12,0,2],[14,0x21,2],[16,crc,4],[20,j.length,4],[24,j.length,4],[28,name.length,2],[30,0,2],[32,0,2],[34,0,2],[36,0,2],[38,0,4],[42,off,4]].forEach(([o,v,n])=>n===4?c.setUint32(o,v,true):c.setUint16(o,v,true));
+    cd.push(new Uint8Array(c.buffer),name);
+    off+=30+name.length+j.length;
+  });
+  const cdSize=cd.reduce((a,b)=>a+b.length,0),e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true);e.setUint16(8,jpgs.length,true);e.setUint16(10,jpgs.length,true);e.setUint32(12,cdSize,true);e.setUint32(16,off,true);
+  save('daily-planner-jpgs.zip',new Blob([...parts,...cd,new Uint8Array(e.buffer)],{type:'application/zip'}));
+};
+const DATE_RE=/^\d{4}-\d{2}-\d{2}$/,str=v=>typeof v==='string'?v:'';
+function clean(d){
+  if(!d||typeof d!=='object'||!DATE_RE.test(d.date))return null;
+  const n=document.querySelectorAll('#rows .row').length,rs=Array.isArray(d.rows)?d.rows:[];
+  const arr=(a,k)=>Array.from({length:k},(_,i)=>str(Array.isArray(a)?a[i]:''));
+  return{date:d.date,quote:str(d.quote),
+    rows:Array.from({length:n},(_,i)=>{const r=Array.isArray(rs[i])?rs[i]:[];return[str(r[0]),str(r[1]),str(r[2]),r[3]?1:0]}),
+    p:arr(d.p,3),reminder:str(d.reminder),tomorrow:str(d.tomorrow),notes:str(d.notes)};
+}
+$('bsave').onclick=()=>{
+  days[cur]=getState();
+  const payload={app:'daily-planner',version:1,days};
+  save('daily-planner-data-'+days[0].date+'.json',new Blob([JSON.stringify(payload,null,1)],{type:'application/json'}));
+};
+$('bload').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+  const files=[...e.target.files].sort((x,y)=>x.name.localeCompare(y.name,undefined,{numeric:true}));
+  e.target.value='';if(!files.length)return;
+  days[cur]=getState();const curDate=days[cur].date,have=new Set(days.map(x=>x.date));
+  let add=0,skip=0,bad=0,okFiles=0,badFiles=0;
+  for(const f of files){
+    try{
+      const j=JSON.parse(await f.text());
+      const list=Array.isArray(j)?j:(j&&Array.isArray(j.days)?j.days:null);
+      if(!list)throw new Error('format');
+      let used=0;
+      list.forEach(d=>{const c=clean(d);if(!c){bad++;return}used++;if(have.has(c.date)){skip++;return}have.add(c.date);days.push(c);add++});
+      if(!used)throw new Error('empty');
+      okFiles++;
+    }catch(err){badFiles++}
+  }
+  if(!okFiles){msg('None of the selected files is a valid planner data file. Nothing was changed.');return}
+  days.sort((a,b)=>a.date<b.date?-1:1);cur=Math.max(0,days.findIndex(x=>x.date===curDate));
+  setState(days[cur]);tabs();draw();persist();
+  msg('Read '+okFiles+' file(s): added '+add+' day(s), kept the existing version for '+skip+' day(s) with a repeated date.'+(badFiles?' '+badFiles+' file(s) were not valid and were skipped.':'')+(bad?' '+bad+' invalid entr'+(bad>1?'ies':'y')+' skipped.':''));
+};
+</script>
+</body>
+</html>
